@@ -1,5 +1,3 @@
-HELLOCKER
-
 North Oppositt Ransomware v3.0
 
 ⚠️ FOR EDUCATIONAL & RESEARCH PURPOSES ONLY ⚠️
