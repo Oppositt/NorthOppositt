@@ -8,7 +8,7 @@ This software is a proof-of-concept ransomware/windows locker created for cybers
 
 DO NOT RUN ON REAL SYSTEMS WITHOUT PERMISSION. THE AUTHOR IS NOT RESPONSIBLE FOR ANY DAMAGE.
 
-Features
+# Features
 
 🔒 Full-screen lock – Blocks all windows, stays on top of everything
 
@@ -32,7 +32,7 @@ Features
 
 🛡️ Safe mode disable – Disables Windows Safe Mode while running
 
-How It Works
+# How It Works
 
 Launch the executable (requires Administrator rights)
 
@@ -57,7 +57,7 @@ TIMER_SECONDS = 24 * 60 * 60 – 24 hours
 
 Contact for Decryption: Telegram @societyvoice
 
-How to Use (for research)
+# How to Use (for research)
 
 Install dependencies:
 pip install cryptography keyboard pycaw comtypes psutil pyinstaller
@@ -81,7 +81,7 @@ Credits: Created by iaefeel & gflm
 
 
 
-North Oppositt Ransomware v3.0
+# North Oppositt Ransomware v3.0
 
 ⚠️ ТОЛЬКО ДЛЯ ОБРАЗОВАТЕЛЬНЫХ ЦЕЛЕЙ ⚠️
 
@@ -89,7 +89,7 @@ North Oppositt Ransomware v3.0
 
 НЕ ЗАПУСКАЙТЕ НА РЕАЛЬНЫХ СИСТЕМАХ БЕЗ РАЗРЕШЕНИЯ. АВТОР НЕ НЕСЁТ ОТВЕТСТВЕННОСТИ ЗА ЛЮБОЙ УЩЕРБ.
 
-Возможности
+# Возможности
 
 🔒 Полноэкранная блокировка – Перекрывает все окна, всегда поверх
 
@@ -114,7 +114,7 @@ North Oppositt Ransomware v3.0
 🛡️ Отключение безопасного режима – Отключает Safe Mode на время работы
 
 
-Как это работает
+# Как это работает
 
 Запуск исполняемого файла (требуются права администратора)
 
@@ -141,7 +141,7 @@ TIMER_SECONDS = 24 * 60 * 60 – 24 часа
 
 Инструкция по использованию
 
-Установи зависимости:
+# Установи зависимости:
 pip install cryptography keyboard pycaw comtypes psutil pyinstaller
 
 Подготовь звуковой файл (опционально):
